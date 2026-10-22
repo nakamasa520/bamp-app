@@ -1,0 +1,15 @@
+{
+  "name": "bamp-task",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed": "python3 scripts/build_seed.py data/schedule.xlsx",
+    "dev": "wrangler dev --local",
+    "db:local": "wrangler d1 migrations apply bamp-task --local && wrangler d1 execute bamp-task --local --file=seed/real.sql",
+    "db:sample": "wrangler d1 migrations apply bamp-task --local && wrangler d1 execute bamp-task --local --file=seed/sample.sql",
+    "db:remote": "wrangler d1 migrations apply bamp-task --remote && wrangler d1 execute bamp-task --remote --file=seed/real.sql",
+    "deploy": "wrangler deploy",
+    "test": "python3 tests/e2e.py"
+  },
+  "devDependencies": { "wrangler": "^4" }
+}

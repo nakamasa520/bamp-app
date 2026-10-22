@@ -1,0 +1,11 @@
+node_modules
+.wrangler
+.dev.vars
+tests/shots
+# 個人情報(氏名・移動手段)を含むため公開しない。公開用は seed/sample.sql(匿名化)
+data/
+seed/real.sql
+seed/real.json
+wrangler.pin.jsonc
+scripts/.pin-server.sh
+__pycache__
