@@ -1,7 +1,8 @@
-import { searchMembers } from './search.js';
+import { searchMembers } from '../public/js/search.js';
 
 const MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
-const json = (o, status = 200, extra = {}) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...extra } });
+const json = (o, status = 200, extra = {}) => new Response(JSON.stringify(o), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...CORS, ...extra } });
+const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type,x-admin-token', 'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS' };
 const ADMIN_WORDS = ['管理者', 'かんりしゃ', 'admin', 'administrator', '管理人'];
 
 async function hmac(secret, msg) {
@@ -43,6 +44,7 @@ async function loadAll(env) {
 export default {
   async fetch(req, env) {
     const url = new URL(req.url); const p = url.pathname;
+    if (req.method === 'OPTIONS' && p.startsWith('/api/')) return new Response(null, { status: 204, headers: CORS });
     try {
       if (p === '/api/data' && req.method === 'GET') {
         const v = await version(env);

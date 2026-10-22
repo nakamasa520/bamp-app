@@ -1,8 +1,10 @@
 import * as M from './model.js';
+import { API_BASE } from './config.js';
+import { searchMembers } from './search.js';
 const { AREAS, baseOf, parseActivity: PA } = M;
 
 const S = { data: null, ix: null, me: null, admin: false, token: '', tab: 'schedule', day: 24, clock: M.makeClock(location.search),
-  version: 0, offline: false, seenId: 0, sel: null, lastKey: '', myHash: '' };
+  version: 0, offline: false, demo: false, seenId: 0, sel: null, lastKey: '', myHash: '' };
 const view = document.getElementById('view'), tabs = document.getElementById('tabs');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -10,12 +12,16 @@ const LS = { get: k => { try { return JSON.parse(localStorage.getItem(k)); } cat
 
 /* ---------- API ---------- */
 async function api(path, opt = {}) {
-  const r = await fetch('/api' + path, { ...opt, headers: { 'content-type': 'application/json', ...(S.token ? { 'x-admin-token': S.token } : {}) } });
+  const r = await fetch(API_BASE.replace(/\/$/, '') + path, { ...opt, headers: { 'content-type': 'application/json', ...(S.token ? { 'x-admin-token': S.token } : {}) } });
   if (!r.ok) throw Object.assign(new Error('http ' + r.status), { status: r.status });
   return r.json();
 }
 function setData(d) { S.data = d; S.ix = M.buildIndex(d); S.version = d.version; }
+async function loadDemo() {            // API が無い静的ホスティング(GitHub Pages)では匿名サンプルで動かす
+  try { const r = await fetch('demo-data.json'); if (!r.ok) return false; setData(await r.json()); S.demo = true; return true; } catch { return false; }
+}
 async function refresh() {
+  if (S.demo) return false;
   try {
     const d = await api('/data?since=' + S.version);
     S.offline = false;
@@ -23,7 +29,7 @@ async function refresh() {
     setData(d); LS.set('bamp:data', d); return true;
   } catch {
     S.offline = true;
-    if (!S.data) { const c = LS.get('bamp:data'); if (c) setData(c); }
+    if (!S.data) { const c = LS.get('bamp:data'); if (c) setData(c); else if (await loadDemo()) S.offline = false; }
     return false;
   }
 }
@@ -81,7 +87,7 @@ function mapHTML(tokens, { all = false, label = '' } = {}) {
     t = `translate(${cl((.5 - x / W * z) * 100, (1 - z) * 100)}%,${cl((.5 - y / H * z) * 100, (1 - z) * 100)}%) scale(${z})`; }
   const pins = M.AREA_ORDER.filter(a => all || bases.includes(a)).map(a => { const [x, y] = AREAS[a].pin;
     return `<div class="pin ${bases.includes(a) ? '' : 'dim'}" style="left:${x / W * 100}%;top:${y / H * 100}%;--c:${AREAS[a].color}"><i></i></div>`; }).join('');
-  return `<div class="map" data-testid="map" style="--z:${z}"><div class="inner" data-t="${t}"><img src="/img/map.webp" alt="エリア図" loading="lazy">${pins}</div>${label ? `<span class="maplabel">${esc(label)}</span>` : ''}</div>`;
+  return `<div class="map" data-testid="map" style="--z:${z}"><div class="inner" data-t="${t}"><img src="img/map.webp" alt="エリア図" loading="lazy">${pins}</div>${label ? `<span class="maplabel">${esc(label)}</span>` : ''}</div>`;
 }
 function armMaps(root = document) { requestAnimationFrame(() => requestAnimationFrame(() => root.querySelectorAll('.map .inner').forEach(e => { e.style.transform = e.dataset.t; }))); }
 
@@ -103,7 +109,7 @@ function putSkeleton(kind) { view.innerHTML = skeleton(kind); }
 function nameScreen() {
   tabs.innerHTML = ''; S.me = null; S.admin = false;
   const el = put(`<div class="name-wrap">
-    <img class="name-logo" src="/img/icon-192.png" alt="BAMP!">
+    <img class="name-logo" src="img/icon-192.png" alt="BAMP!">
     <h1 class="h1" style="margin-bottom:18px">名前を入力</h1>
     <label class="glass field">${icon('search')}<input data-testid="name-input" id="q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例: 中西"></label>
     <div class="results stagger" id="results" data-testid="results"></div></div>`, 'name');
@@ -111,7 +117,9 @@ function nameScreen() {
   const run = async () => {
     const v = q.value.trim(); const my = ++seq; if (!v) { box.innerHTML = ''; return; }
     box.innerHTML = `<div class="glass person" style="--i:0">${sk('42px', '42px', 'border-radius:50%')}<div style="flex:1">${sk('50%', '16px')}</div></div>`;
-    let r; try { r = await api('/search?q=' + encodeURIComponent(v)); } catch { r = { results: [], error: true }; }
+    let r;
+    if (S.demo) r = ['管理者', 'かんりしゃ', 'admin'].includes(v.toLowerCase().replace(/\s/g, '')) ? { admin: true, pinRequired: false } : { results: searchMembers(v, S.data.members) };
+    else try { r = await api('/search?q=' + encodeURIComponent(v)); } catch { r = { results: [], error: true }; }
     if (my !== seq) return;
     if (r.admin) { box.innerHTML = `<button class="glass person press" style="--i:0" data-act="admin-ask" data-pin="${r.pinRequired ? 1 : 0}" data-testid="result-admin"><span class="avatar" style="background:linear-gradient(135deg,#ff6a3d,#f4260f)">管</span><div><b>管理者</b><div class="small muted">スケジュール変更・コメント</div></div></button>`; return; }
     box.innerHTML = r.results.length ? r.results.map((m, i) => `<button class="glass person press" style="--i:${i}" data-act="pick" data-id="${m.id}" data-testid="result"><span class="avatar">${esc(M.initial(m.name))}</span>
@@ -144,7 +152,7 @@ const meRec = () => S.ix.byId.get(S.me);
 function header() {
   const m = S.admin ? { name: '管理者' } : meRec(); const now = S.clock.now(); const j = M.jst(now);
   return `<div class="top"><button class="avatar press" data-act="logout" data-testid="logout" style="${S.admin ? 'background:linear-gradient(135deg,#ff6a3d,#f4260f)' : ''}">${esc(S.admin ? '管' : M.initial(m.name))}</button>
-    <div style="flex:1;min-width:0"><div class="who" data-testid="who">${esc(m.name)}</div>${S.offline ? '<span class="offline">オフライン</span>' : ''}${S.clock.simulated ? '<span class="offline" style="margin-left:4px">テスト時刻</span>' : ''}</div>
+    <div style="flex:1;min-width:0"><div class="who" data-testid="who">${esc(m.name)}</div>${S.demo ? '<span class="offline" data-testid="demo-chip">デモデータ</span>' : ''}${S.offline ? '<span class="offline">オフライン</span>' : ''}${S.clock.simulated ? '<span class="offline" style="margin-left:4px">テスト時刻</span>' : ''}</div>
     <div class="glass clock num" id="clock" data-testid="clock">${String(j.h).padStart(2, '0')}:${String(j.mi).padStart(2, '0')}</div></div>`;
 }
 const slotRange = s => `${s.start}${s.end ? '–' + s.end : '〜'}`;
@@ -292,12 +300,13 @@ const myHash = () => S.admin || !S.data ? '' : JSON.stringify(S.data.entries.fil
 /* ---------- イベント ---------- */
 document.addEventListener('click', async e => {
   const a = e.target.closest('[data-act]'); if (!a) return; const d = a.dataset;
+  if (S.demo && ['ed-save', 'send', 'del-comment', 'polish'].includes(d.act)) return toast('デモ表示のため保存・送信はできません');
   const act = {
     close: () => closeSheet(),
     pick() { confirmSheet(S.data?.members.find(m => m.id === +d.id) || { id: +d.id, name: a.querySelector('b').textContent, grp: '', role: '' }); },
     async confirm() { closeSheet(); LS.set('bamp:me', +d.id); LS.del('bamp:admin'); await enter(+d.id); },
     'admin-ask': () => adminSheet(d.pin === '1'),
-    async 'admin-go'() { try { const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ pin: document.getElementById('pin')?.value || '' }) }); S.token = r.token || ''; LS.set('bamp:admin', { token: S.token }); LS.del('bamp:me'); closeSheet(); await enter(0, true); } catch { toast('PINが違います'); } },
+    async 'admin-go'() { if (S.demo) { closeSheet(); await enter(0, true); return; } try { const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ pin: document.getElementById('pin')?.value || '' }) }); S.token = r.token || ''; LS.set('bamp:admin', { token: S.token }); LS.del('bamp:me'); closeSheet(); await enter(0, true); } catch { toast('PINが違います'); } },
     tab: async () => { if (S.tab !== d.tab) await go(d.tab); },
     day: () => { S.day = +d.day; paint(); },
     slot: () => teamSheet(+d.day, +d.idx),
@@ -361,5 +370,5 @@ async function poll() {
   else if (S.ix && me && S.ix.byId.has(me)) await enter(me);
   else nameScreen();
   setInterval(tick, 1000); setInterval(poll, 5000);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();

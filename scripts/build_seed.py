@@ -80,5 +80,9 @@ out.append("INSERT OR REPLACE INTO meta(key,value) VALUES('version','1');")
 name = 'sample' if ANON else 'real'
 open(f'seed/{name}.sql','w').write('\n'.join(out)+'\n')
 json.dump(dict(members=members, slots=slots, entries=entries), open(f'seed/{name}.json','w'), ensure_ascii=False, indent=1)
+if ANON:
+    demo = dict(version=1, members=members, slots=slots, comments=[],
+                entries=[dict(m=e['member_id'], d=e['day'], i=e['idx'], a=e['activity'], n='') for e in entries])
+    json.dump(demo, open('public/demo-data.json','w'), ensure_ascii=False, separators=(',',':'))
 print(name, len(members), 'members', len(slots), 'slots', len(entries), 'entries')
 print([ (m['name'], m['captain_of']) for m in members if m['captain_of']])

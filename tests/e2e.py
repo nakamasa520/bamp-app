@@ -245,6 +245,27 @@ def t_layout(b):
         p.get_by_test_id(f'tab-{tab}').click(); p.wait_for_timeout(900); assert no_hscroll(p), tab
     p.get_by_test_id('tab-schedule').click(); p.wait_for_timeout(900); shot(p, '11-small'); ctx.close()
 
+@case('GitHub Pages想定: サブパス静的配信(APIなし)→匿名デモデータで全画面が動く')
+def t_pages(b):
+    site = '/tmp/bamp-site'; os.makedirs(site, exist_ok=True)
+    link = os.path.join(site, 'bamp-app')
+    if os.path.islink(link): os.remove(link)
+    os.symlink(os.path.join(ROOT, 'public'), link)
+    srv = subprocess.Popen(['python3', '-m', 'http.server', '8801', '--directory', site], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setsid)
+    try:
+        time.sleep(1.5); ctx, p = new_page(b)
+        p.goto('http://localhost:8801/bamp-app/?t=2026-10-24T13:10')
+        p.get_by_test_id('name-input').fill('メンバー03'); p.get_by_test_id('result').first.click(); p.get_by_test_id('confirm-yes').click()
+        expect(p.get_by_test_id('hero')).to_be_visible(timeout=8000); expect(p.get_by_test_id('demo-chip')).to_be_visible()
+        expect(p.get_by_test_id('map')).to_be_visible(); assert p.evaluate("()=>document.querySelector('.map img').naturalWidth") > 0   # 画像がサブパスで読める
+        assert '中西' not in p.inner_text('body') and '鬼丸' not in p.inner_text('body')
+        p.get_by_test_id('tab-areas').click(); expect(p.get_by_test_id('area-card')).to_have_count(5, timeout=4000)
+        p.get_by_test_id('logout').click(); p.get_by_test_id('logout-ok').click(); p.get_by_test_id('name-input').fill('管理者')
+        p.get_by_test_id('result-admin').click(); p.get_by_test_id('admin-go').click(); expect(p.get_by_test_id('group').first).to_be_visible(timeout=6000)
+        p.get_by_test_id('tab-comms').click(); p.get_by_test_id('c-text').fill('x'); p.get_by_test_id('send').click(); expect(p.get_by_test_id('toast')).to_contain_text('デモ')
+        shot(p, '12-pages-demo'); bad = [e for e in p.errors if 'Failed to load resource' not in e]; assert not bad, bad; ctx.close()
+    finally: os.killpg(os.getpgid(srv.pid), signal.SIGTERM)
+
 # ---------------------------------------------------------------- run
 if __name__ == '__main__':
     srv = start_server(); only = sys.argv[1:]; failed = 0
