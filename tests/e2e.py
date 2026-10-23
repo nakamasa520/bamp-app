@@ -245,6 +245,25 @@ def t_layout(b):
         p.get_by_test_id(f'tab-{tab}').click(); p.wait_for_timeout(900); assert no_hscroll(p), tab
     p.get_by_test_id('tab-schedule').click(); p.wait_for_timeout(900); shot(p, '11-small'); ctx.close()
 
+@case('参加者一覧: 全員と「いま何をしているか」を表示 → 自分の名前タップで確認→予定ページへ')
+def t_roster(b):
+    ctx, p = new_page(b); p.goto(T('2026-10-24T13:10')); rows = p.get_by_test_id('member-row'); expect(rows).to_have_count(24, timeout=8000)
+    expect(p.get_by_test_id('roster-head')).to_contain_text('10/24 13:00–14:30')
+    by = {SEED['members'][i]['name']: i for i in range(24)}
+    def now_of(name): return rows.nth(by[name]).get_by_test_id('member-now').inner_text()
+    assert now_of('宮永 航平') == 'Circle' and now_of('鬼丸 凌雅') == 'Circle' and now_of('河野 史花') == 'Hexagon-Ⅰ' and now_of('池田 紗希子') == 'Triangle'
+    assert now_of('余傳 舞美') == 'Circle'
+    shot(p, '13-roster')
+    p.get_by_test_id('name-input').fill('zzzz'); expect(p.get_by_test_id('no-result')).to_be_visible(timeout=4000); expect(rows.first).to_be_visible()   # 該当なしでも一覧から選べる
+    p.get_by_test_id('name-input').fill('')
+    rows.nth(by['宮永 航平']).click(); expect(p.get_by_test_id('confirm-name')).to_have_text('宮永 航平')
+    p.get_by_test_id('confirm-yes').click(); expect(p.get_by_test_id('hero-title')).to_have_text('Circle', timeout=8000); expect(p.get_by_test_id('who')).to_have_text('宮永 航平')
+    ctx.close()
+    ctx, p = new_page(b); p.goto(T('2026-10-24T14:29:50')); expect(p.get_by_test_id('member-row').first).to_be_visible(timeout=8000)
+    assert p.get_by_test_id('member-now').nth(by['中西 将大']).inner_text() == 'Square'
+    expect(p.get_by_test_id('member-now').nth(by['中西 将大'])).to_have_text('Pentagon', timeout=15000)     # 時刻が進むと一覧も自動更新
+    ctx.close()
+
 @case('GitHub Pages想定: サブパス静的配信(APIなし)→匿名デモデータで全画面が動く')
 def t_pages(b):
     site = '/tmp/bamp-site'; os.makedirs(site, exist_ok=True)
@@ -255,7 +274,7 @@ def t_pages(b):
     try:
         time.sleep(1.5); ctx, p = new_page(b)
         p.goto('http://localhost:8801/bamp-app/?t=2026-10-24T13:10')
-        p.get_by_test_id('name-input').fill('メンバー03'); p.get_by_test_id('result').first.click(); p.get_by_test_id('confirm-yes').click()
+        expect(p.get_by_test_id('member-row')).to_have_count(24, timeout=8000); p.get_by_test_id('member-row').nth(2).click(); expect(p.get_by_test_id('confirm-name')).to_have_text('メンバー03'); p.get_by_test_id('confirm-yes').click()
         expect(p.get_by_test_id('hero')).to_be_visible(timeout=8000); expect(p.get_by_test_id('demo-chip')).to_be_visible()
         expect(p.get_by_test_id('map')).to_be_visible(); assert p.evaluate("()=>document.querySelector('.map img').naturalWidth") > 0   # 画像がサブパスで読める
         assert '中西' not in p.inner_text('body') and '鬼丸' not in p.inner_text('body')

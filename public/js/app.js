@@ -97,7 +97,7 @@ function skeleton(kind) {
   const card = (h) => `<div class="glass skel-card">${sk('40%', '14px')}${sk('75%', '30px', 'margin-top:12px')}${sk('100%', h, 'margin-top:14px')}</div>`;
   const list = n => Array.from({ length: n }, () => `<div class="glass skel-card row">${sk('46px', '46px', 'border-radius:16px')}<div style="flex:1">${sk('60%', '16px')}${sk('35%', '11px', 'margin-top:8px')}</div></div>`).join('');
   const head = `<div class="top">${sk('44px', '44px', 'border-radius:50%')}<div style="flex:1">${sk('50%', '20px')}</div>${sk('76px', '36px', 'border-radius:999px')}</div>`;
-  const body = { name: `<div class="name-wrap">${sk('78px', '78px', 'border-radius:24px;margin-bottom:26px')}${sk('45%', '28px')}${sk('100%', '62px', 'border-radius:999px;margin-top:18px')}</div>`,
+  const body = { name: `<div class="name-wrap"><div class="row" style="margin-bottom:16px">${sk('56px', '56px', 'border-radius:18px')}${sk('45%', '28px')}</div>${sk('100%', '62px', 'border-radius:999px')}<div style="margin-top:18px">${list(4)}</div></div>`,
     schedule: head + sk('100%', '46px', 'border-radius:999px;margin-bottom:14px') + card('120px') + list(4),
     areas: head + sk('100%', '190px', 'border-radius:20px;margin-bottom:14px') + list(3), comms: head + list(3), live: head + card('70px') + card('70px') + card('70px'), members: head + list(6) }[kind] || list(4);
   return `<div class="screen" data-testid="skeleton">${body}</div>`;
@@ -106,25 +106,37 @@ function put(html, kind) { const el = document.createElement('div'); el.classNam
 function putSkeleton(kind) { view.innerHTML = skeleton(kind); }
 
 /* ---------- 名前入力 ---------- */
+function rosterHTML() {
+  const ix = S.ix, loc = M.locate(ix, S.clock.now());
+  const ref = loc.state === 'after' ? { day: 25, idx: ix.slotsByDay[25].length - 1 } : loc, sl = slotOf(ref.day, ref.idx);
+  const rows = S.data.members.map((m, i) => {
+    const att = M.attends(m, ref.day), a = att ? M.actOf(ix, m.id, ref.day, ref.idx) : PA(''), label = att ? a.label : '参加なし';
+    return `<button class="glass person press" style="--i:${Math.min(i, 10)}" data-act="pick" data-id="${m.id}" data-testid="member-row"><span class="avatar">${esc(M.initial(m.name))}</span>
+      <div style="flex:1;min-width:0"><b>${esc(m.name)}</b><div class="small muted">${esc(m.grp)} ${esc(m.role)}</div></div>
+      <span class="chip" style="--c:${colorOf(a)}" data-testid="member-now"><i class="dot" style="--c:${colorOf(a)}"></i>${esc(label)}</span></button>`; }).join('');
+  return `<div class="h2" data-testid="roster-head">参加者 ${S.data.members.length}人 ・ ${dayLabel(ref.day)} ${slotRange(sl)} ${loc.state === 'before' ? '（開始前の最初の予定）' : '時点'}</div><div class="results stagger">${rows}</div>`;
+}
 function nameScreen() {
   tabs.innerHTML = ''; S.me = null; S.admin = false;
   const el = put(`<div class="name-wrap">
-    <img class="name-logo" src="img/icon-192.png" alt="BAMP!">
-    <h1 class="h1" style="margin-bottom:18px">名前を入力</h1>
-    <label class="glass field">${icon('search')}<input data-testid="name-input" id="q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例: 中西"></label>
-    <div class="results stagger" id="results" data-testid="results"></div></div>`, 'name');
-  const q = el.querySelector('#q'), box = el.querySelector('#results'); let t, seq = 0;
+    <div class="row" style="gap:14px;margin-bottom:16px"><img class="name-logo" src="img/icon-192.png" alt="BAMP!"><h1 class="h1">名前を選択</h1></div>
+    <label class="glass field">${icon('search')}<input data-testid="name-input" id="q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="名前で絞り込み 例: 中西"></label>
+    <div class="results stagger" id="results" data-testid="results"></div><div id="roster" data-testid="roster"></div></div>`, 'name');
+  const q = el.querySelector('#q'), box = el.querySelector('#results'), roster = el.querySelector('#roster'); let t, seq = 0;
+  const draw = () => { roster.innerHTML = S.ix ? rosterHTML() : '<div class="glass empty">データを読み込めません</div>'; S.nameKey = S.ix ? locKey() : ''; };
+  draw(); S.nameRefresh = draw;
   const run = async () => {
-    const v = q.value.trim(); const my = ++seq; if (!v) { box.innerHTML = ''; return; }
+    const v = q.value.trim(); const my = ++seq; if (!v) { box.innerHTML = ''; roster.style.display = ''; return; }
     box.innerHTML = `<div class="glass person" style="--i:0">${sk('42px', '42px', 'border-radius:50%')}<div style="flex:1">${sk('50%', '16px')}</div></div>`;
     let r;
     if (S.demo) r = ['管理者', 'かんりしゃ', 'admin'].includes(v.toLowerCase().replace(/\s/g, '')) ? { admin: true, pinRequired: false } : { results: searchMembers(v, S.data.members) };
     else try { r = await api('/search?q=' + encodeURIComponent(v)); } catch { r = { results: [], error: true }; }
     if (my !== seq) return;
+    roster.style.display = r.admin || r.results?.length ? 'none' : '';      // 該当なしの時は一覧から選べるように残す
     if (r.admin) { box.innerHTML = `<button class="glass person press" style="--i:0" data-act="admin-ask" data-pin="${r.pinRequired ? 1 : 0}" data-testid="result-admin"><span class="avatar" style="background:linear-gradient(135deg,#ff6a3d,#f4260f)">管</span><div><b>管理者</b><div class="small muted">スケジュール変更・コメント</div></div></button>`; return; }
     box.innerHTML = r.results.length ? r.results.map((m, i) => `<button class="glass person press" style="--i:${i}" data-act="pick" data-id="${m.id}" data-testid="result"><span class="avatar">${esc(M.initial(m.name))}</span>
       <div style="flex:1;min-width:0"><b>${esc(m.name)}</b><div class="small muted">${esc(m.grp)} ${esc(m.role)}</div></div></button>`).join('')
-      : `<div class="glass empty" style="--i:0" data-testid="no-result">${r.error ? '接続できません' : '該当する名前が見つかりません'}</div>`;
+      : `<div class="glass empty" style="--i:0;margin-bottom:12px" data-testid="no-result">${r.error ? '接続できません' : '該当する名前が見つかりません。下の一覧から選べます'}</div>`;
   };
   q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(run, 250); });
   q.addEventListener('keydown', e => { if (e.key === 'Enter') { clearTimeout(t); run().then(() => box.querySelector('[data-act]')?.click()); } });
@@ -291,7 +303,7 @@ function paint() {
 }
 const locKey = () => { const l = M.locate(S.ix, S.clock.now()); return `${l.state}:${l.day}:${l.idx}`; };
 async function enter(id, admin = false) {
-  S.me = id; S.admin = admin; const loc = S.ix ? M.locate(S.ix, S.clock.now()) : {}; S.day = loc.day || 24; S.sel = { day: loc.day || 24, idx: loc.idx ?? 0 };
+  S.me = id; S.admin = admin; S.nameRefresh = null; const loc = S.ix ? M.locate(S.ix, S.clock.now()) : {}; S.day = loc.day || 24; S.sel = { day: loc.day || 24, idx: loc.idx ?? 0 };
   S.seenId = admin ? 0 : (LS.get('bamp:seen:' + id) || 0); S.tab = admin ? 'live' : 'schedule'; S.myHash = myHash();
   await go(S.tab);
 }
@@ -340,7 +352,8 @@ document.addEventListener('input', e => {
 
 /* ---------- 常時更新 ---------- */
 function tick() {
-  if (!S.ix || (!S.me && !S.admin)) return;
+  if (!S.ix) return;
+  if (!S.me && !S.admin) { if (S.nameRefresh && S.nameKey !== locKey() && !document.querySelector('[data-testid=skeleton]')) S.nameRefresh(); return; }
   const now = S.clock.now(), j = M.jst(now), ck = document.getElementById('clock'); if (ck) ck.textContent = `${String(j.h).padStart(2, '0')}:${String(j.mi).padStart(2, '0')}`;
   if (locKey() !== S.lastKey && !sheetEl && document.querySelector('[data-testid=skeleton]') === null) { paint(); return; }
   if (S.tab === 'schedule') { const loc = M.locate(S.ix, now); if (loc.state === 'during') { const s = slotOf(loc.day, loc.idx);
